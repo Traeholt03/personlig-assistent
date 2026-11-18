@@ -1,0 +1,210 @@
+{
+  "name": "🌅 Morning Briefing",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "id"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "ea4bd2f3-a66d-47be-a06c-628f393a617a",
+      "name": "📅 Google Calendar - I dag",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var NL=String.fromCharCode(10);\nconst allCalendarItems = $('📅 Google Calendar - I dag').all();\nconst now = new Date();\nconst today = new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Copenhagen',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);\nconst yesterday = new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Copenhagen',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now.getTime()-86400000));\nconst todayLabel = new Intl.DateTimeFormat('da-DK',{timeZone:'Europe/Copenhagen',weekday:'long',year:'numeric',month:'long',day:'numeric'}).format(now);\nfunction hm(dt){ return new Date(dt).toLocaleTimeString('da-DK',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Copenhagen'}); }\nconst calendarItems = allCalendarItems.map(function(i){return i.json;}).filter(function(e){ var d=e.start && (e.start.dateTime||e.start.date); if(!d) return false; return String(d).slice(0,10)===today; });\nvar events = calendarItems.length ? calendarItems.map(function(e){ var t=e.start.dateTime?hm(e.start.dateTime):'Hele dagen'; return '• '+t+': '+(e.summary||'Ingen titel'); }).join(NL) : '• Ingen kalenderbegivenheder i dag';\nvar logRows = $('📋 Hent Task Log').all().map(function(i){return i.json;}).filter(function(r){return r && r.task;});\nfunction actOf(r){ return (r.actual_min!==undefined && r.actual_min!==null && r.actual_min!=='') ? Number(r.actual_min) : null; }\nvar unfinished = logRows.filter(function(r){ return r.log_date===yesterday && r.done!==true && actOf(r)===null; });\nvar unfinishedText = unfinished.length ? unfinished.map(function(r){ return '• '+r.task+(r.task_type?(' ('+r.task_type+')'):''); }).join(NL) : '';\nconst systemPrompt = [\n'Du er Daniels personlige morgenassistent. Du er præcis, motiverende og handlingsorienteret.',\n'',\n'Skriv ALTID korrekt dansk med æ, ø og å. Brug rigtige danske bogstaver — aldrig ae/oe/aa.',\n'',\n'Giv en struktureret morgenbriefing baseret på dagens kalender og eventuelle uafsluttede opgaver fra i går.',\n'',\n'Format (Telegram Markdown — brug *fed*):',\n'',\n'🌅 *God morgen, Daniel!*',\n'[En kort energisk hilsen — maks 1 sætning]',\n'',\n'🗓️ *Dagens program*',\n'[Alle kalenderbegivenheder med tid, eller: Ingen aftaler i dag]',\n'',\n'⏳ *Uafsluttet fra i går*',\n'[KUN hvis der er uafsluttede opgaver fra i går i konteksten: list dem kort og tilbyd venligt at planlægge dem i dag (Daniel kan svare med dem). Hvis der ingen er, så udelad HELE dette afsnit inkl. overskriften.]',\n'',\n'🎯 *Fokus i dag*',\n'[Hvad kræver mest opmærksomhed? Hvad skal forberedes?]',\n'',\n'💡 *Dagens læring*',\n'[En konkret anbefaling — roter mellem AI/tech, studie, produktivitet, personlig udvikling]',\n'',\n'🚀 *Motivation*',\n'[Maks 2 sætninger — personlig og energisk]',\n'',\n'📋 *Planlæg din dag*',\n'Svar på denne besked med din todo-liste, så estimerer jeg tiden, lægger den udenom dine møder og foreslår en plan til din kalender.',\n'',\n'Gengiv afsnittet Planlæg din dag ordret. Maks 340 ord. Undgå KUN ubalancerede Markdown-styringstegn (* _ ` [ ]) — brug ALTID korrekte danske bogstaver æ ø å.'\n].join(NL);\nconst carryBlock = unfinished.length ? (NL+NL+'Uafsluttede opgaver fra i går (ikke markeret som udført):'+NL+unfinishedText) : (NL+NL+'Ingen uafsluttede opgaver fra i går.');\nconst userContent = 'Dato: '+todayLabel+NL+NL+'Kalender i dag:'+NL+events+carryBlock;\nreturn [{ json: { payload: JSON.stringify({ model:'claude-sonnet-4-6', max_tokens:1024, system: systemPrompt, messages:[{ role:'user', content: userContent }] }) } }];"
+      },
+      "id": "a5c40bc9-2955-4084-ae20-e5d6d9f73899",
+      "name": "📝 Byg Anthropic Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "1a213fae-1ee8-4496-8942-e3de106d48e1",
+      "name": "🧠 Claude - Morning Briefing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        896,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.content[0].text }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "7df2315e-eab0-4ae5-b38a-48208365a24c",
+      "name": "📱 Telegram - Send Morgen",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1120,
+        0
+      ],
+      "webhookId": "9cf25b69-8bbc-4d00-9f41-5100faa32d25",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "ec5b8af6-f8f5-4e97-98ba-aa6395989db8",
+      "name": "⏰ Schedule 06:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "mb-get-tasklog",
+      "name": "📋 Hent Task Log",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_task_log"
+        },
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    }
+  ],
+  "connections": {
+    "📝 Byg Anthropic Payload": {
+      "main": [
+        [
+          {
+            "node": "🧠 Claude - Morning Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠 Claude - Morning Briefing": {
+      "main": [
+        [
+          {
+            "node": "📱 Telegram - Send Morgen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏰ Schedule 06:00": {
+      "main": [
+        [
+          {
+            "node": "📅 Google Calendar - I dag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📅 Google Calendar - I dag": {
+      "main": [
+        [
+          {
+            "node": "📋 Hent Task Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Hent Task Log": {
+      "main": [
+        [
+          {
+            "node": "📝 Byg Anthropic Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}

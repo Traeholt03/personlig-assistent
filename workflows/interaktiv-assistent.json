@@ -1,0 +1,1883 @@
+{
+  "name": "🤖 Interactive Assistant V2",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "id": "e41dfbd4-5b1c-4b73-835c-50b153c7c9fe",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        304
+      ],
+      "webhookId": "1aeffbc2-2216-4910-a3ae-e28d643f7d9c",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_assistant_memory"
+        },
+        "returnAll": true
+      },
+      "id": "4e62ea20-f93d-4d93-a054-23a0f855ca33",
+      "name": "Get Memory",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        304
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_task_log"
+        },
+        "returnAll": true,
+        "orderBy": "={{ false }}"
+      },
+      "id": "9387e22d-a578-4b99-81fe-9c90747a7da0",
+      "name": "Get Task Log",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        304
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_pending_plan"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "plan_date",
+              "keyValue": "={{ $now.setZone(\"Europe/Copenhagen\").toFormat(\"yyyy-MM-dd\") }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "pending"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "b6854231-00ba-455e-9b7d-09d46c855904",
+      "name": "Get Pending Plan",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        848,
+        304
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "id"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "a2e7647e-6d44-45b6-8ca1-9449725e9fcc",
+      "name": "Get Calendar Today",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1040,
+        304
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var NL=String.fromCharCode(10);\nconst trig = $('Telegram Trigger').first().json;\nconst userMessage = (trig && trig.message && (trig.message.text || trig.message.caption)) || '';\nconst chatId = trig && trig.message && trig.message.chat ? trig.message.chat.id : null;\nconst now = new Date();\nconst today = new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Copenhagen',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);\nconst weekday = new Intl.DateTimeFormat('da-DK',{timeZone:'Europe/Copenhagen',weekday:'long',day:'numeric',month:'long'}).format(now);\nconst nowTime = new Intl.DateTimeFormat('da-DK',{timeZone:'Europe/Copenhagen',hour:'2-digit',minute:'2-digit'}).format(now);\nfunction hm(dt){ return new Date(dt).toLocaleTimeString('da-DK',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Copenhagen'}); }\nconst calRows = $('Get Calendar Today').all().map(function(i){return i.json;}).filter(function(e){return e && e.start;});\nconst dayEvents = calRows.filter(function(e){ var d=e.start.dateTime||e.start.date; if(!d) return false; return String(d).slice(0,10)===today; });\nvar eventsText = dayEvents.length ? dayEvents.map(function(e){ var s=e.start.dateTime?hm(e.start.dateTime):'hele dagen'; var en=e.end&&e.end.dateTime?hm(e.end.dateTime):''; return '- '+s+(en?'-'+en:'')+': '+(e.summary||'(uden titel)'); }).join(NL) : '(ingen møder i kalenderen i dag)';\nconst memRows = $('Get Memory').all().map(function(i){return i.json;}).filter(function(r){return r && r.content && r.active!==false;});\nvar memText = memRows.length ? memRows.map(function(r){return '- ['+r.mem_type+'] '+r.content;}).join(NL) : '(ingen gemte præferencer endnu)';\nconst logRows = $('Get Task Log').all().map(function(i){return i.json;}).filter(function(r){return r && r.task_type && r.estimate_min;});\nfunction actOf(r){ return (r.actual_min!==undefined && r.actual_min!==null && r.actual_min!=='') ? Number(r.actual_min) : null; }\nvar calib='(ingen historik endnu)';\nif(logRows.length){ var by={}; logRows.forEach(function(r){ var v=actOf(r); if(v===null) v=Number(r.estimate_min); (by[r.task_type]=by[r.task_type]||[]).push(v); }); calib=Object.keys(by).map(function(t){ var a=by[t]; var avg=Math.round(a.reduce(function(x,y){return x+y;},0)/a.length); return '- '+t+': typisk '+avg+' min ('+a.length+' registreringer)'; }).join(NL); }\nvar todaysLogged = logRows.filter(function(r){return r.log_date===today;});\nvar loggedText = todaysLogged.length ? todaysLogged.map(function(r){ var v=actOf(r); var a=(v===null)?' | faktisk: endnu ikke registreret':(' | faktisk: '+v+' min'); return '- '+r.task+' (type '+r.task_type+', estimat '+r.estimate_min+' min'+a+')'; }).join(NL) : '(ingen loggede opgaver i dag)';\nconst pendRows = $('Get Pending Plan').all().map(function(i){return i.json;}).filter(function(r){return r && r.plan_json;});\nconst hasPending = pendRows.length>0;\nconst pendingText = hasPending ? pendRows[pendRows.length-1].plan_json : '(ingen ventende plan)';\nconst sp = [\n'Du er Daniels personlige assistent og dagsplanlægger. Du er direkte, præcis og handlingsorienteret.',\n'Skriv ALTID korrekt dansk med æ, ø og å — aldrig ae/oe/aa.',\n'Aktuel tid i København: '+weekday+', kl. '+nowTime+'. Dags dato (ISO): '+today+'.',\n'',\n'<kontekst>',\n'Daniel arbejder med e-mailmarketing og automation (n8n), styrer sine opgaver i et projektværktøj og studerer ved siden af jobbet.',\n'</kontekst>',\n'',\n'<dagens_kalender>',\neventsText,\n'</dagens_kalender>',\n'',\n'<hukommelse>',\nmemText,\n'</hukommelse>',\n'',\n'<estimat_kalibrering>',\n'Historiske tider pr opgavetype (faktisk tid hvor den findes, ellers estimat) — brug til realistiske estimater:',\ncalib,\n'</estimat_kalibrering>',\n'',\n'<dagens_loggede_opgaver>',\nloggedText,\n'</dagens_loggede_opgaver>',\n'',\n'<ventende_plan>',\n'Findes der en plan der venter på bekræftelse i dag: '+(hasPending?'JA':'NEJ'),\n'Plan-data (JSON): '+pendingText,\n'</ventende_plan>',\n'',\n'<opgave>',\n'Klassificer Daniels besked som en af fire hensigter:',\n'1. plan = Daniel giver en todo-liste eller beder om at få planlagt sin dag.',\n'2. confirm = Daniel bekræfter en ventende plan (fx ja, kør, opret dem). Vælg KUN hvis ventende_plan er JA.',\n'3. actuals = Daniel rapporterer hvor lang tid opgaver FAKTISK tog (fx kampagnen tog 2 timer, mails 20 min).',\n'4. chat = alt andet.',\n'',\n'Hvis intent=plan: For HVER opgave: estimer realistisk varighed (brug estimat_kalibrering), giv en kort type (fx kampagne, email, møde-forb, admin, studie, dyb-arbejde), og skemalæg den i et ledigt hul i dag UDENOM eksisterende møder. Kun rimelig dagtid (ca 08:00-18:00), undgå overlap, 10 min buffer, respekter præferencer. Start tidligst fra næste hele eller halve time efter kl. '+nowTime+'. Brug ISO 8601 med tidszone +02:00. I reply: kort forslag med hver blok (klokkeslæt + opgave + estimat), samlet tid, slut med linjen: Svar JA for at lægge dem i kalenderen.',\n'Hvis intent=confirm: sæt reply til en kort bekræftelse om at blokkene oprettes.',\n'Hvis intent=actuals: match Daniels rapport mod dagens_loggede_opgaver og returner i feltet actuals et array af objekter med task og actual_min, hvor task er det NØJAGTIGE opgavenavn fra dagens_loggede_opgaver og actual_min er heltal minutter (konverter timer til minutter). Sæt reply til en kort kvittering.',\n'Hvis intent=chat: besvar normalt i reply.',\n'',\n'Hvis Daniel udtrykker en varig præference, et arbejdsmønster eller en tilbagevendende opgave, tilføj det i memory_writes.',\n'Tilføj IKKE en memory der i forvejen står i <hukommelse> (undgå dubletter).',\n'Hvis Daniels besked gør en eksisterende hukommelse forældet eller modsiger den, så list den gamles NØJAGTIGE content-tekst (uden [type]-præfikset) i memory_deactivate, så den kan slukkes.',\n'</opgave>',\n'',\n'<output>',\n'Svar KUN med gyldig JSON (ingen markdown udenfor). Brug korrekte danske tegn i reply-feltet. Format:',\n'{ \"intent\":\"plan|confirm|actuals|chat\", \"reply\":\"tekst (Telegram Markdown: *fed*, _kursiv_)\", \"plan\":[ {\"task\":\"...\",\"type\":\"...\",\"estimate_min\":60,\"start\":\"2026-06-29T09:00:00+02:00\",\"end\":\"2026-06-29T10:00:00+02:00\"} ], \"actuals\":[ {\"task\":\"...\",\"actual_min\":120} ], \"memory_writes\":[ {\"type\":\"preference|pattern|recurring\",\"content\":\"...\"} ], \"memory_deactivate\":[ \"nøjagtig content-tekst på en forældet memory\" ] }',\n'Udelad plan/actuals/memory_writes/memory_deactivate (eller sæt tomt array) hvis ikke relevant.',\n'</output>'\n].join(NL);\nreturn [{ json: { chatId: chatId, today: today, payload: JSON.stringify({ model:'claude-sonnet-4-6', max_tokens:2048, system: sp, messages:[{ role:'user', content: userMessage }] }) } }];"
+      },
+      "id": "4ff237c0-6381-4b71-9380-201ff27e32aa",
+      "name": "Build Claude Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        304
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "aa99649b-ee0b-456a-9b8b-1439932fcc60",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        304
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $json;\nconst raw = res && res.content && res.content[0] ? res.content[0].text : '';\nvar txt = (raw||'').trim();\nvar fence = String.fromCharCode(96)+String.fromCharCode(96)+String.fromCharCode(96);\nif(txt.indexOf(fence)>=0){ var first=txt.indexOf(fence); txt=txt.slice(first+fence.length); if(txt.slice(0,4).toLowerCase()==='json'){ txt=txt.slice(4); } var last=txt.lastIndexOf(fence); if(last>=0){ txt=txt.slice(0,last); } txt=txt.trim(); }\nvar data;\ntry { data = JSON.parse(txt); } catch(e){ data = { intent:'chat', reply: (raw || 'Beklager, jeg kunne ikke fortolke svaret. Prøv igen.'), plan:[], actuals:[], memory_writes:[], memory_deactivate:[] }; }\nvar intent = data.intent || 'chat';\nvar reply = data.reply || '';\nvar plan = Array.isArray(data.plan) ? data.plan : [];\nvar actuals = Array.isArray(data.actuals) ? data.actuals : [];\nvar mw = Array.isArray(data.memory_writes) ? data.memory_writes : [];\nvar md = Array.isArray(data.memory_deactivate) ? data.memory_deactivate : [];\nconst chatId = $('Build Claude Payload').first().json.chatId;\nconst today = $('Build Claude Payload').first().json.today;\nreturn [{ json: { intent: intent, reply: reply, planJson: JSON.stringify(plan), planCount: plan.length, actualsJson: JSON.stringify(actuals), memoryWrites: mw, memoryDeactivate: md, chatId: String(chatId), today: today } }];"
+      },
+      "id": "f6942f8f-7512-4696-a823-c1e41c61f9cf",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1648,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "plan"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "plan"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "confirm"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "confirm"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "actuals"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "actuals"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "chat"
+        }
+      },
+      "id": "84d6f7eb-9a80-440f-8a2c-f3ef653beac7",
+      "name": "Route Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1888,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_pending_plan"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "plan_date": "={{ $json.today }}",
+            "plan_json": "={{ $json.planJson }}",
+            "status": "pending",
+            "created_at": "={{ $now.toISO() }}"
+          },
+          "schema": [
+            {
+              "id": "plan_date",
+              "displayName": "plan_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "plan_json",
+              "displayName": "plan_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4f2154d2-71b1-41f2-a0be-7a996ffa25cd",
+      "name": "Save Pending Plan",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2128,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $(\"Parse Claude Response\").item.json.chatId }}",
+        "text": "={{ $(\"Parse Claude Response\").item.json.reply }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Bekræft",
+                    "additionalFields": {
+                      "callback_data": "confirm_plan"
+                    }
+                  },
+                  {
+                    "text": "✏️ Ret",
+                    "additionalFields": {
+                      "callback_data": "edit_plan"
+                    }
+                  },
+                  {
+                    "text": "❌ Drop",
+                    "additionalFields": {
+                      "callback_data": "cancel_plan"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "910b1673-9cae-478e-90de-f3cac79a2eea",
+      "name": "Send Proposal",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2352,
+        48
+      ],
+      "webhookId": "7ed100e5-216c-48f5-b2e2-d80a8b7c0f17",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const pendRows = $(\"Get Pending Plan\").all().map(function(i){return i.json;}).filter(function(r){return r && r.plan_json;});\nconst trig = $(\"Telegram Trigger\").first().json;\nconst chatId = trig && trig.message && trig.message.chat ? String(trig.message.chat.id) : \"\";\nconst today = $(\"Parse Claude Response\").first().json.today;\nif(!pendRows.length){ return []; }\nvar plan=[];\ntry{ plan = JSON.parse(pendRows[pendRows.length-1].plan_json) || []; }catch(e){ plan=[]; }\nvar stamp = Date.now().toString(36).slice(-4);\nvar dateKey = String(today).replace(/-/g,'');\nreturn plan.filter(function(p){return p && p.start && p.end;}).map(function(p, idx){\n  return { json: {\n    summary: (p.task || \"Opgave\"),\n    description: \"Estimeret: \"+(p.estimate_min||\"?\")+\" min. Type: \"+(p.type||\"-\")+\". Planlagt af din assistent.\",\n    start: p.start,\n    end: p.end,\n    task: p.task || \"Opgave\",\n    task_type: p.type || \"-\",\n    estimate_min: Number(p.estimate_min) || 0,\n    scheduled_start: p.start,\n    log_date: today,\n    chatId: chatId,\n    created_at: (new Date()).toISOString(),\n    task_id: dateKey+\"-\"+stamp+\"-\"+idx,\n    done: false\n  }};\n});"
+      },
+      "id": "ef8a4e27-525d-4875-8b87-27d3c7d9880f",
+      "name": "Expand Plan To Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2128,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "id"
+        },
+        "start": "={{ $json.start }}",
+        "end": "={{ $json.end }}",
+        "additionalFields": {
+          "description": "={{ $json.description }}",
+          "summary": "={{ $json.summary }}"
+        }
+      },
+      "id": "60f1b379-597b-48ed-b75e-351602faff84",
+      "name": "Create Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        2352,
+        208
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_task_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_date": "={{ $('Expand Plan To Events').item.json.log_date }}",
+            "task": "={{ $('Expand Plan To Events').item.json.task }}",
+            "task_type": "={{ $('Expand Plan To Events').item.json.task_type }}",
+            "estimate_min": "={{ $('Expand Plan To Events').item.json.estimate_min }}",
+            "scheduled_start": "={{ $('Expand Plan To Events').item.json.scheduled_start }}",
+            "created_at": "={{ $('Expand Plan To Events').item.json.created_at }}",
+            "task_id": "={{ $('Expand Plan To Events').item.json.task_id }}",
+            "done": "={{ $('Expand Plan To Events').item.json.done }}"
+          },
+          "schema": [
+            {
+              "id": "log_date",
+              "displayName": "log_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "task",
+              "displayName": "task",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "task_type",
+              "displayName": "task_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estimate_min",
+              "displayName": "estimate_min",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "scheduled_start",
+              "displayName": "scheduled_start",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "task_id",
+              "displayName": "task_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "done",
+              "displayName": "done",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "54c6dfcd-fa9f-4b87-a241-d480d85fe0af",
+      "name": "Log Task",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2560,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst created = $(\"Create Calendar Event\").all().map(function(i){return i.json;}).filter(function(e){return e && (e.id||e.htmlLink||e.start);});\nconst trig = $(\"Telegram Trigger\").first().json;\nconst chatId = trig && trig.message && trig.message.chat ? String(trig.message.chat.id) : \"\";\nvar lines = created.map(function(e){ var t=\"\"; try{ t=new Date(e.start.dateTime).toLocaleTimeString(\"da-DK\",{hour:\"2-digit\",minute:\"2-digit\",timeZone:\"Europe/Copenhagen\"}); }catch(x){ t=\"\"; } return \"- \"+(t?t+\" \":\"\")+(e.summary||\"Opgave\"); }).join(\"\\n\");\nvar text = created.length ? (\"Lagt i kalenderen (\"+created.length+\" blokke):\\n\"+lines) : \"Der var ingen plan at oprette.\";\nreturn [{ json: { chatId: chatId, text: text } }];\n"
+      },
+      "id": "a21f91ec-5d6e-4da1-89aa-db4eadba98ed",
+      "name": "Build Confirm Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2784,
+        208
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "ebdab8f8-9ca3-4eec-94b7-3b6d7f8439be",
+      "name": "Send Confirmation",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3008,
+        208
+      ],
+      "executeOnce": true,
+      "webhookId": "d6f7d6aa-08ac-40e1-a480-aa846e82dd7d",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "878243c4-e36f-41ba-9eb2-28957ce81a66",
+      "name": "Send Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2128,
+        512
+      ],
+      "webhookId": "b5a837e9-12fc-4407-b431-8dc699efda3f",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst mw = $(\"Parse Claude Response\").first().json.memoryWrites || [];\nconst now = (new Date()).toISOString();\nif(!Array.isArray(mw) || !mw.length){ return []; }\nreturn mw.filter(function(m){return m && m.content;}).map(function(m){ return { json: { mem_type: (m.type||\"preference\"), content: m.content, active: true, created_at: now } }; });\n"
+      },
+      "id": "23c35607-1358-4c41-b113-c28a4f93c12e",
+      "name": "Split Memory Writes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_assistant_memory"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "mem_type": "={{ $json.mem_type }}",
+            "content": "={{ $json.content }}",
+            "active": "={{ $json.active }}",
+            "created_at": "={{ $json.created_at }}"
+          },
+          "schema": [
+            {
+              "id": "mem_type",
+              "displayName": "mem_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "content",
+              "displayName": "content",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "active",
+              "displayName": "active",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6786c2b5-ef06-4dd0-b457-7143ca08af2d",
+      "name": "Insert Memory",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2128,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "4be817ff-f67d-4bd6-bb58-9736354e9394",
+      "name": "Send Actuals Confirm",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2128,
+        368
+      ],
+      "webhookId": "e9dd0085-95b3-49d5-8765-a6a3828e17ae",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = $('Parse Claude Response').first().json.today;\nvar arr=[];\ntry{ arr = JSON.parse($('Parse Claude Response').first().json.actualsJson||'[]')||[]; }catch(e){ arr=[]; }\nreturn arr.filter(function(a){return a && a.task && a.actual_min!==undefined && a.actual_min!==null;}).map(function(a){ return { json: { task: String(a.task), actual_min: Number(a.actual_min)||0, log_date: today } }; });"
+      },
+      "id": "0fc178b1-2b1c-4fc4-a7f5-a2758fe82040",
+      "name": "Expand Actuals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2352,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_task_log"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "log_date",
+              "keyValue": "={{ $json.log_date }}"
+            },
+            {
+              "keyName": "task",
+              "keyValue": "={{ $json.task }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "actual_min": "={{ $json.actual_min }}"
+          },
+          "schema": [
+            {
+              "id": "actual_min",
+              "displayName": "actual_min",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "caecff1d-0e81-4431-ae5f-bf7ad169e27b",
+      "name": "Update Task Log",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2560,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.callback_query ? true : false }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "id": "17dd6e15-d652-4d2f-9ad3-95b4042d9a08"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cb-route-update",
+      "name": "Route Update Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "queryId": "={{ $json.callback_query.id }}",
+        "additionalFields": {}
+      },
+      "id": "cb-answer",
+      "name": "Answer Callback",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        384,
+        896
+      ],
+      "webhookId": "c90bf465-109a-432e-be37-147d62141175",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Telegram Trigger').item.json.callback_query.data }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "confirm_plan"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "confirm"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Telegram Trigger').item.json.callback_query.data }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "edit_plan"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "edit"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Telegram Trigger').item.json.callback_query.data }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "cancel_plan"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cancel"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Telegram Trigger').item.json.callback_query.data }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    },
+                    "rightValue": "done|"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "done"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cb-route-callback",
+      "name": "Route Callback",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        656,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_pending_plan"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "plan_date",
+              "keyValue": "={{ $now.setZone(\"Europe/Copenhagen\").toFormat(\"yyyy-MM-dd\") }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "pending"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "cb-get-pending",
+      "name": "Get Pending Plan CB",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        864,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pendRows = $(\"Get Pending Plan CB\").all().map(function(i){return i.json;}).filter(function(r){return r && r.plan_json;});\nconst trig = $(\"Telegram Trigger\").first().json;\nconst cq = trig && trig.callback_query ? trig.callback_query : null;\nconst chatId = cq && cq.message && cq.message.chat ? String(cq.message.chat.id) : \"\";\nconst today = new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Copenhagen',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());\nif(!pendRows.length){ return []; }\nvar plan=[];\ntry{ plan = JSON.parse(pendRows[pendRows.length-1].plan_json) || []; }catch(e){ plan=[]; }\nvar stamp = Date.now().toString(36).slice(-4);\nvar dateKey = today.replace(/-/g,'');\nreturn plan.filter(function(p){return p && p.start && p.end;}).map(function(p, idx){\n  return { json: {\n    summary: (p.task || \"Opgave\"),\n    description: \"Estimeret: \"+(p.estimate_min||\"?\")+\" min. Type: \"+(p.type||\"-\")+\". Planlagt af din assistent.\",\n    start: p.start,\n    end: p.end,\n    task: p.task || \"Opgave\",\n    task_type: p.type || \"-\",\n    estimate_min: Number(p.estimate_min) || 0,\n    scheduled_start: p.start,\n    log_date: today,\n    chatId: chatId,\n    created_at: (new Date()).toISOString(),\n    task_id: dateKey+\"-\"+stamp+\"-\"+idx,\n    done: false\n  }};\n});"
+      },
+      "id": "cb-expand",
+      "name": "Expand Plan CB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "id"
+        },
+        "start": "={{ $json.start }}",
+        "end": "={{ $json.end }}",
+        "additionalFields": {
+          "description": "={{ $json.description }}",
+          "summary": "={{ $json.summary }}"
+        }
+      },
+      "id": "cb-create-event",
+      "name": "Create Calendar Event CB",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1328,
+        976
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_task_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_date": "={{ $('Expand Plan CB').item.json.log_date }}",
+            "task": "={{ $('Expand Plan CB').item.json.task }}",
+            "task_type": "={{ $('Expand Plan CB').item.json.task_type }}",
+            "estimate_min": "={{ $('Expand Plan CB').item.json.estimate_min }}",
+            "scheduled_start": "={{ $('Expand Plan CB').item.json.scheduled_start }}",
+            "created_at": "={{ $('Expand Plan CB').item.json.created_at }}",
+            "task_id": "={{ $('Expand Plan CB').item.json.task_id }}",
+            "done": "={{ $('Expand Plan CB').item.json.done }}"
+          },
+          "schema": [
+            {
+              "id": "log_date",
+              "displayName": "log_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "task",
+              "displayName": "task",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "task_type",
+              "displayName": "task_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estimate_min",
+              "displayName": "estimate_min",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "scheduled_start",
+              "displayName": "scheduled_start",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "task_id",
+              "displayName": "task_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "done",
+              "displayName": "done",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cb-log-task",
+      "name": "Log Task CB",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1552,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_pending_plan"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "plan_date",
+              "keyValue": "={{ $('Expand Plan CB').first().json.log_date }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "pending"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "confirmed"
+          },
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cb-mark-confirmed",
+      "name": "Mark Plan Confirmed CB",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1776,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const created = $(\"Create Calendar Event CB\").all().map(function(i){return i.json;}).filter(function(e){return e && (e.id||e.htmlLink||e.start);});\nconst trig = $(\"Telegram Trigger\").first().json;\nconst cq = trig && trig.callback_query ? trig.callback_query : null;\nconst chatId = cq && cq.message && cq.message.chat ? String(cq.message.chat.id) : \"\";\nvar lines = created.map(function(e){ var t=\"\"; try{ t=new Date(e.start.dateTime).toLocaleTimeString(\"da-DK\",{hour:\"2-digit\",minute:\"2-digit\",timeZone:\"Europe/Copenhagen\"}); }catch(x){ t=\"\"; } return \"- \"+(t?t+\" \":\"\")+(e.summary||\"Opgave\"); }).join(\"\\n\");\nvar text = created.length ? (\"✅ Lagt i kalenderen (\"+created.length+\" blokke):\\n\"+lines) : \"Der var ingen plan at oprette (måske allerede bekræftet?).\";\nreturn [{ json: { chatId: chatId, text: text } }];"
+      },
+      "id": "cb-build-confirm",
+      "name": "Build Confirm CB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "cb-send-confirm",
+      "name": "Send Confirmation CB",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2240,
+        976
+      ],
+      "webhookId": "f66219e3-a2e5-42c0-83e5-5f22963558c0",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.callback_query.message.chat.id }}",
+        "text": "✏️ Hvad vil du rette? Skriv den nye eller justerede liste, så laver jeg et nyt forslag.",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "cb-send-edit",
+      "name": "Send Edit Prompt CB",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        1008
+      ],
+      "webhookId": "49b01538-da5e-4be5-a2d2-9daa1e65079a",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.callback_query.message.chat.id }}",
+        "text": "❌ Planen er droppet — jeg lægger ikke noget i kalenderen.",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "cb-send-cancel",
+      "name": "Send Cancelled CB",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        1152
+      ],
+      "webhookId": "3321d4a8-bee3-4790-92ee-b6913f473fd6",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const md = $(\"Parse Claude Response\").first().json.memoryDeactivate || [];\nif(!Array.isArray(md) || !md.length){ return []; }\nreturn md.filter(function(c){return c && String(c).trim();}).map(function(c){ return { json: { content: String(c) } }; });"
+      },
+      "id": "cb-split-deactivate",
+      "name": "Split Memory Deactivate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_assistant_memory"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "content",
+              "keyValue": "={{ $json.content }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "active": false
+          },
+          "schema": [
+            {
+              "id": "active",
+              "displayName": "active",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cb-deactivate-memory",
+      "name": "Deactivate Memory",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2128,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.callback_query.message.chat.id }}",
+        "text": "={{ '📌 ' + $json.task }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Udført",
+                    "additionalFields": {
+                      "callback_data": "={{ 'done|' + $json.task_id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "cb-done-btn-cb",
+      "name": "Send Task Done Button CB",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1552,
+        1168
+      ],
+      "webhookId": "317db4e2-c105-4f9e-82c0-293329e23775",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{ '📌 ' + $json.task }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Udført",
+                    "additionalFields": {
+                      "callback_data": "={{ 'done|' + $json.task_id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "cb-done-btn-text",
+      "name": "Send Task Done Button",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2784,
+        368
+      ],
+      "webhookId": "3a444564-7793-4c1d-a418-f7493094172e",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const trig = $('Telegram Trigger').first().json;\nconst data = (trig.callback_query && trig.callback_query.data) || '';\nconst taskId = data.split('|')[1] || '';\nconst chatId = trig.callback_query && trig.callback_query.message && trig.callback_query.message.chat ? String(trig.callback_query.message.chat.id) : '';\nreturn [{ json: { task_id: taskId, chatId: chatId } }];"
+      },
+      "id": "cb-mark-done",
+      "name": "Mark Task Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        1312
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TABLE_ID_task_log"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "keyValue": "={{ $json.task_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "done": true
+          },
+          "schema": [
+            {
+              "id": "done",
+              "displayName": "done",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cb-update-done",
+      "name": "Update Task Done",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1104,
+        1312
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Mark Task Done').first().json.chatId }}",
+        "text": "✅ Markeret som udført.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "cb-send-done-confirm",
+      "name": "Send Done Confirm",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1328,
+        1312
+      ],
+      "webhookId": "8483876b-05f6-412b-8136-99cca6529518",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Get Memory": {
+      "main": [
+        [
+          {
+            "node": "Get Task Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Task Log": {
+      "main": [
+        [
+          {
+            "node": "Get Pending Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pending Plan": {
+      "main": [
+        [
+          {
+            "node": "Get Calendar Today",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Calendar Today": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Payload": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Route Intent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Memory Writes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Memory Deactivate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Intent": {
+      "main": [
+        [
+          {
+            "node": "Save Pending Plan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Expand Plan To Events",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Actuals Confirm",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Pending Plan": {
+      "main": [
+        [
+          {
+            "node": "Send Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Plan To Events": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Log Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Task": {
+      "main": [
+        [
+          {
+            "node": "Build Confirm Message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Task Done Button",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Confirm Message": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Memory Writes": {
+      "main": [
+        [
+          {
+            "node": "Insert Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Actuals Confirm": {
+      "main": [
+        [
+          {
+            "node": "Expand Actuals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Actuals": {
+      "main": [
+        [
+          {
+            "node": "Update Task Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Route Update Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Update Type": {
+      "main": [
+        [
+          {
+            "node": "Answer Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer Callback": {
+      "main": [
+        [
+          {
+            "node": "Route Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Callback": {
+      "main": [
+        [
+          {
+            "node": "Get Pending Plan CB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Edit Prompt CB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Cancelled CB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Task Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pending Plan CB": {
+      "main": [
+        [
+          {
+            "node": "Expand Plan CB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Plan CB": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event CB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event CB": {
+      "main": [
+        [
+          {
+            "node": "Log Task CB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Task CB": {
+      "main": [
+        [
+          {
+            "node": "Mark Plan Confirmed CB",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Task Done Button CB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Plan Confirmed CB": {
+      "main": [
+        [
+          {
+            "node": "Build Confirm CB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Confirm CB": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation CB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Memory Deactivate": {
+      "main": [
+        [
+          {
+            "node": "Deactivate Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Task Done": {
+      "main": [
+        [
+          {
+            "node": "Update Task Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Task Done": {
+      "main": [
+        [
+          {
+            "node": "Send Done Confirm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}

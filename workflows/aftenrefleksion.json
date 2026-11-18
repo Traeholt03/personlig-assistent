@@ -1,0 +1,179 @@
+{
+  "name": "🌙 Evening Reflection",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "be560dd8-2ce7-453b-b533-4fdca10e2e18",
+      "name": "⏰ Schedule 18:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "id"
+        },
+        "returnAll": "={{ true }}",
+        "options": {}
+      },
+      "id": "c9047a03-855f-447b-9f10-eed5ede6a26b",
+      "name": "📅 Google Calendar - I dag",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var NL=String.fromCharCode(10);\nconst allCalendarItems = $('📅 Google Calendar - I dag').all();\nconst now = new Date();\nconst today = new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Copenhagen',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);\nconst todayLabel = new Intl.DateTimeFormat('da-DK',{timeZone:'Europe/Copenhagen',weekday:'long',year:'numeric',month:'long',day:'numeric'}).format(now);\nfunction hm(dt){ return new Date(dt).toLocaleTimeString('da-DK',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Copenhagen'}); }\nconst calendarItems = allCalendarItems.map(function(i){return i.json;}).filter(function(e){ var d=e.start && (e.start.dateTime||e.start.date); if(!d) return false; return String(d).slice(0,10)===today; });\nvar events = calendarItems.length ? calendarItems.map(function(e){ var t=e.start.dateTime?hm(e.start.dateTime):'Hele dagen'; return '• '+t+': '+(e.summary||'Ingen titel'); }).join(NL) : '• Ingen kalenderbegivenheder i dag';\nconst systemPrompt = [\n'Du er Daniels personlige aftenassistent. Du er varm, reflekterende og motiverende.',\n'',\n'Skriv ALTID korrekt dansk med æ, ø og å. Brug rigtige danske bogstaver — aldrig ae/oe/aa.',\n'',\n'Giv en aftenbriefing der opsummerer dagen og motiverer til en god start på morgen.',\n'',\n'Format (Telegram Markdown — brug *fed*):',\n'',\n'🌙 *God aften, Daniel*',\n'[En varm, personlig hilsen — maks 1 sætning]',\n'',\n'✅ *Hvad du opnåede i dag*',\n'[Opsummer konkret ud fra kalenderen. Vær specifik og anerkendende.]',\n'',\n'💪 *Motivationsboost*',\n'[2-3 sætninger der anerkender indsatsen og motiverer til i morgen.]',\n'',\n'🌱 *En tanke til i morgen*',\n'[Et konkret fokuspunkt]',\n'',\n'⏱️ *Tidsfeedback til din assistent*',\n'Svar på denne besked med hvor lang tid dagens opgaver faktisk tog (fx: kampagne 2t, mails 30 min), så finjusterer jeg dine fremtidige estimater.',\n'',\n'📚 *Læring*',\n'[En anbefaling inden for AI/tech eller studie]',\n'',\n'Gengiv afsnittet Tidsfeedback ordret. Maks 350 ord. Undgå KUN ubalancerede Markdown-styringstegn (* _ ` [ ]) — brug ALTID korrekte danske bogstaver æ ø å.'\n].join(NL);\nconst userContent = 'Dato: '+todayLabel+NL+NL+'Kalenderbegivenheder i dag:'+NL+events;\nreturn [{ json: { payload: JSON.stringify({ model:'claude-sonnet-4-6', max_tokens:1200, system: systemPrompt, messages:[{ role:'user', content: userContent }] }) } }];"
+      },
+      "id": "36e8f7c7-5a17-4f0f-aa3f-3f35cf8b3a49",
+      "name": "📝 Byg Anthropic Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "=application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "08ac79ab-adad-43e2-acc7-469b7a55e4b0",
+      "name": "🧠 Claude - Evening Reflection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.content[0].text }}",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "appendAttribution": false
+        }
+      },
+      "id": "0a0a0ba8-e13f-43f4-97a1-41575b3b1e05",
+      "name": "📱 Telegram - Send Aften",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        0
+      ],
+      "webhookId": "b0404f95-026c-44ca-8204-3da2d37671f2",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "📅 Google Calendar - I dag": {
+      "main": [
+        [
+          {
+            "node": "📝 Byg Anthropic Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Byg Anthropic Payload": {
+      "main": [
+        [
+          {
+            "node": "🧠 Claude - Evening Reflection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠 Claude - Evening Reflection": {
+      "main": [
+        [
+          {
+            "node": "📱 Telegram - Send Aften",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏰ Schedule 18:00": {
+      "main": [
+        [
+          {
+            "node": "📅 Google Calendar - I dag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}
